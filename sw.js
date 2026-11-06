@@ -1,5 +1,5 @@
 // Bump the version number whenever you change index.html so phones pick up the update
-const CACHE = 'geolog-v3';
+const CACHE = 'geolog-v4';
 const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

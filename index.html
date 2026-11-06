@@ -260,7 +260,7 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
     let accStr = '';
     if (bestGps) {
       latLonStr = `Latitude: ${bestGps.lat.toFixed(6)}° | Longitude: ${bestGps.lon.toFixed(6)}°`;
-      accStr = bestGps.source === 'Manual Entry' ? ' | [MANUAL]' : '';
+      accStr = bestGps.source === 'Manual Entry' ? ' | [MANUAL]' : ` | [±${bestGps.acc}m${bestGps.altitude !== null ? ', Alt: ' + bestGps.altitude + 'm' : ''}]`;
     }
 
     const fontSize = Math.max(18, Math.round(w / 44));
