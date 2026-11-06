@@ -256,11 +256,11 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
     const geologist = ($('geologist').value || 'Not Specified').trim();
     const desc = ($('description').value || 'No description').trim();
 
-    let locStr = 'GPS PENDING / NOT LOCKED';
+    let latLonStr = 'Latitude: GPS PENDING | Longitude: GPS PENDING';
     let accStr = '';
     if (bestGps) {
-      locStr = `${bestGps.lat.toFixed(6)}°, ${bestGps.lon.toFixed(6)}°`;
-      accStr = bestGps.source === 'Manual Entry' ? ' [MANUAL]' : ` [±${bestGps.acc}m${bestGps.altitude ? ', Alt: ' + bestGps.altitude + 'm' : ''}]`;
+      latLonStr = `Latitude: ${bestGps.lat.toFixed(6)}° | Longitude: ${bestGps.lon.toFixed(6)}°`;
+      accStr = bestGps.source === 'Manual Entry' ? ' | [MANUAL]' : '';
     }
 
     const fontSize = Math.max(18, Math.round(w / 44));
@@ -286,8 +286,8 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
       return lines;
     }
 
-    const descLines = wrapLines('DESC: ', desc);
-    const totalLines = 2 + descLines.length;
+    const descLines = wrapLines('Description: ', desc);
+    const totalLines = 3 + descLines.length;
     const bannerHeight = padding * 2 + totalLines * lineHeight;
 
     ctx.fillStyle = 'rgba(10, 14, 18, 0.85)';
@@ -299,7 +299,10 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
     let y = h - bannerHeight + padding + fontSize;
 
     ctx.fillStyle = '#fde047';
-    ctx.fillText(`${dateStr} ${timeStr} | ${locStr}${accStr}`, padding, y);
+    ctx.fillText(`Date: ${dateStr} | Time: ${timeStr}`, padding, y);
+
+    y += lineHeight;
+    ctx.fillText(latLonStr + accStr, padding, y);
 
     y += lineHeight;
     ctx.fillStyle = '#38bdf8';
