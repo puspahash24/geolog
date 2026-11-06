@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Geo-Tag Field Photos (High-Precision GPS)</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#121417">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+:root{--bg:#121417;--surface:#1c2026;--card:#242a33;--ink:#f0f3f6;--muted:#9ba3af;--line:#363e4a;--accent:#e65c00;--ok:#22c55e;--warn:#f59e0b;--bad:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,sans-serif;padding:12px}
+main{max-width:580px;margin:0 auto}
+h1{font-size:1.3rem;margin:6px 0 12px;font-weight:700}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+.gps-box{background:var(--card);border-radius:8px;padding:12px;border-left:5px solid var(--bad);margin-bottom:10px;transition:border-color .3s}
+.gps-box.locking{border-left-color:var(--warn)}
+.gps-box.locked{border-left-color:var(--ok)}
+.coord-display{font-size:1.25rem;font-weight:700;letter-spacing:.5px;font-family:ui-monospace,Menlo,monospace}
+.acc-tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:.8rem;font-weight:700;margin-top:6px}
+.acc-good{background:#14532d;color:#86efac}
+.acc-med{background:#78350f;color:#fde047}
+.acc-bad{background:#7f1d1d;color:#fca5a5}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-weight:600;cursor:pointer;font-size:.9rem}
+.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent);width:100%;font-size:1.05rem;padding:12px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+input,textarea{width:100%;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;font:inherit;margin:4px 0 10px}
+textarea{min-height:70px;resize:vertical}
+label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.preview-wrap{position:relative;background:#000;border-radius:8px;overflow:hidden;margin-top:10px}
+.preview-wrap img{width:100%;display:block;max-height:360px;object-fit:contain}
+.rec-card{display:flex;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px}
+.rec-card img{width:80px;height:80px;object-fit:cover;border-radius:6px;flex-shrink:0}
+.rec-info{font-size:.85rem;line-height:1.35;overflow:hidden}
+.rec-info b{color:var(--ink);display:block;font-size:.95rem}
+.banner{background:#451a03;border:1px solid #d97706;color:#fef3c7;padding:10px;border-radius:8px;font-size:.85rem;margin-bottom:12px;line-height:1.4}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>Geology Field Photo Logger</h1>
+
+  <div id="iframeWarning" class="banner hide">
+    <strong>Running inside a frame/preview panel:</strong> Browsers restrict direct hardware GPS communication inside embedded views. Click below to launch in your browser's main window for high-precision satellite accuracy.
+    <div style="margin-top:8px">
+      <button type="button" class="btn" id="btnBreakout">Open in Full Browser Tab</button>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div id="gpsBox" class="gps-box">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.8rem;color:var(--muted);font-weight:700">HARDWARE SATELLITE GPS</span>
+        <span id="gpsStatus">Acquiring satellites...</span>
+      </div>
+      <div id="coords" class="coord-display" style="margin:6px 0">Waiting for fix...</div>
+      <div id="accBox"><span class="acc-tag acc-bad">No Fix</span></div>
+      <div id="satNotes" style="font-size:.8rem;color:var(--muted);margin-top:6px">Turn on device Location/GPS with "Precise Location" enabled and ensure clear view of the sky.</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="btn" id="btnRestartGps" style="flex:1">Force Satellite Lock</button>
+      <button type="button" class="btn" id="btnToggleManual">Manual Override</button>
+    </div>
+    
+    <div id="manualBox" class="hide" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><label>Latitude</label><input type="number" step="any" id="manLat" placeholder="23.456789"></div>
+        <div><label>Longitude</label><input type="number" step="any" id="manLon" placeholder="85.123456"></div>
+      </div>
+      <button type="button" class="btn" id="btnApplyManual" style="width:100%">Set Manual Coordinates</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <label for="geologist">Geologist Name</label>
+    <input type="text" id="geologist" placeholder="e.g. Dr. A. Sharma">
+
+    <label for="description">Outcrop / Lithology Description</label>
+    <textarea id="description" placeholder="Formation, lithology, strike/dip, structural notes, sample ID..."></textarea>
+
+    <input type="file" id="camInput" accept="image/*" capture="environment" class="hide">
+    <button type="button" class="btn btn-primary" id="btnSnap">Capture / Select Photo</button>
+
+    <div id="previewWrap" class="preview-wrap hide">
+      <img id="imgPreview" alt="Field preview">
+    </div>
+
+    <button type="button" class="btn btn-primary hide" id="btnSave" style="background:var(--ok);margin-top:10px">Save to Log</button>
+  </section>
+
+  <section class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <strong id="logCount">Logged Samples (0)</strong>
+      <button type="button" class="btn" id="btnExportCsv">Export CSV</button>
+    </div>
+    <div id="recordsList"></div>
+  </section>
+</main>
+
+<script>
+(function(){
+  // Offline support: register the service worker and ask Chrome to protect saved data
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => {});
+  }
+
+  // DOM references
+  const $ = id => document.getElementById(id);
+  let bestGps = null;
+  let activeWatchId = null;
+  let stagedImage = null;
+  let stagedBlob = null;
+  let db = null;
+
+  // 1. Detect iframe restrictions
+  if (window.self !== window.top) {
+    $('iframeWarning').classList.remove('hide');
+    $('btnBreakout').onclick = () => window.open(window.location.href, '_blank');
+  }
+
+  // 2. High-Precision Hardware GPS Lock
+  function startHardwareGps() {
+    if (!navigator.geolocation) {
+      $('gpsStatus').textContent = 'Geolocation not supported by this browser';
+      return;
+    }
+
+    if (activeWatchId !== null) {
+      navigator.geolocation.clearWatch(activeWatchId);
+    }
+
+    $('gpsBox').className = 'gps-box locking';
+    $('gpsStatus').textContent = 'Connecting to GPS hardware...';
+    $('coords').textContent = 'Searching satellites...';
+    $('accBox').innerHTML = '<span class="acc-tag acc-med">Powering GPS Chip...</span>';
+
+    const highAccuracyOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 30000
+    };
+
+    activeWatchId = navigator.geolocation.watchPosition(
+      pos => {
+        const c = pos.coords;
+        const acc = Math.round(c.accuracy);
+        bestGps = {
+          lat: c.latitude,
+          lon: c.longitude,
+          acc: acc,
+          altitude: c.altitude !== null ? Math.round(c.altitude) : null,
+          time: new Date(pos.timestamp),
+          source: 'GPS Hardware'
+        };
+
+        if (acc <= 15) {
+          $('gpsBox').className = 'gps-box locked';
+          $('gpsStatus').textContent = 'Strong Satellite Fix';
+          $('accBox').innerHTML = `<span class="acc-tag acc-good">±${acc}m (High Precision)</span>`;
+        } else if (acc <= 50) {
+          $('gpsBox').className = 'gps-box locked';
+          $('gpsStatus').textContent = 'Moderate Satellite Fix';
+          $('accBox').innerHTML = `<span class="acc-tag acc-med">±${acc}m (Refining...)</span>`;
+        } else {
+          $('gpsBox').className = 'gps-box locking';
+          $('gpsStatus').textContent = 'Refining Satellites...';
+          $('accBox').innerHTML = `<span class="acc-tag acc-bad">±${acc}m (Coarse - stay outdoors)</span>`;
+        }
+
+        $('coords').textContent = `${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)}`;
+        $('satNotes').textContent = c.altitude !== null ? `Altitude: ~${Math.round(c.altitude)}m MSL` : 'Acquiring altitude...';
+
+        if (stagedImage) renderStampedPhoto();
+      },
+      err => {
+        let reason = 'GPS error';
+        if (err.code === 1) reason = 'Permission denied. Allow "Precise Location" in browser & phone settings.';
+        else if (err.code === 2) reason = 'Position unavailable. Step outdoors away from tall structures.';
+        else if (err.code === 3) reason = 'Satellite acquisition timed out. Retrying...';
+        
+        $('gpsBox').className = 'gps-box';
+        $('gpsStatus').textContent = 'No Satellite Lock';
+        $('accBox').innerHTML = `<span class="acc-tag acc-bad">${reason}</span>`;
+      },
+      highAccuracyOptions
+    );
+  }
+
+  $('btnRestartGps').onclick = startHardwareGps;
+
+  // 3. Manual coordinate overrides
+  $('btnToggleManual').onclick = () => $('manualBox').classList.toggle('hide');
+  $('btnApplyManual').onclick = () => {
+    const lat = parseFloat($('manLat').value);
+    const lon = parseFloat($('manLon').value);
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      alert('Please enter valid coordinates in decimal degrees.');
+      return;
+    }
+    if (activeWatchId !== null) navigator.geolocation.clearWatch(activeWatchId);
+    bestGps = { lat, lon, acc: 0, altitude: null, time: new Date(), source: 'Manual Entry' };
+    $('gpsBox').className = 'gps-box locked';
+    $('gpsStatus').textContent = 'Manual Coordinate Lock';
+    $('coords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    $('accBox').innerHTML = `<span class="acc-tag acc-good">Exact (Manual)</span>`;
+    $('manualBox').classList.add('hide');
+    if (stagedImage) renderStampedPhoto();
+  };
+
+  // 4. Image Capture & Dynamic Canvas Stamping
+  $('btnSnap').onclick = () => $('camInput').click();
+
+  $('camInput').onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      stagedImage = img;
+      renderStampedPhoto();
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  };
+
+  function renderStampedPhoto() {
+    if (!stagedImage) return;
+
+    const img = stagedImage;
+    const maxDim = 2000;
+    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+    const w = Math.round(img.width * scale);
+    const h = Math.round(img.height * scale);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 8);
+    const geologist = ($('geologist').value || 'Not Specified').trim();
+    const desc = ($('description').value || 'No description').trim();
+
+    let locStr = 'GPS PENDING / NOT LOCKED';
+    let accStr = '';
+    if (bestGps) {
+      locStr = `${bestGps.lat.toFixed(6)}°, ${bestGps.lon.toFixed(6)}°`;
+      accStr = bestGps.source === 'Manual Entry' ? ' [MANUAL]' : ` [±${bestGps.acc}m${bestGps.altitude ? ', Alt: ' + bestGps.altitude + 'm' : ''}]`;
+    }
+
+    const fontSize = Math.max(18, Math.round(w / 44));
+    const lineHeight = fontSize * 1.35;
+    const padding = Math.round(fontSize * 0.8);
+    ctx.font = `bold ${fontSize}px ui-monospace, "SF Mono", monospace`;
+
+    const maxTextWidth = w - padding * 2;
+    function wrapLines(prefix, text) {
+      const words = (prefix + text).split(' ');
+      const lines = [];
+      let current = words[0];
+      for (let i = 1; i < words.length; i++) {
+        const test = current + ' ' + words[i];
+        if (ctx.measureText(test).width < maxTextWidth) {
+          current = test;
+        } else {
+          lines.push(current);
+          current = words[i];
+        }
+      }
+      lines.push(current);
+      return lines;
+    }
+
+    const descLines = wrapLines('DESC: ', desc);
+    const totalLines = 2 + descLines.length;
+    const bannerHeight = padding * 2 + totalLines * lineHeight;
+
+    ctx.fillStyle = 'rgba(10, 14, 18, 0.85)';
+    ctx.fillRect(0, h - bannerHeight, w, bannerHeight);
+
+    ctx.fillStyle = bestGps && bestGps.acc <= 15 ? '#22c55e' : '#e65c00';
+    ctx.fillRect(0, h - bannerHeight, Math.round(fontSize * 0.4), bannerHeight);
+
+    let y = h - bannerHeight + padding + fontSize;
+
+    ctx.fillStyle = '#fde047';
+    ctx.fillText(`${dateStr} ${timeStr} | ${locStr}${accStr}`, padding, y);
+
+    y += lineHeight;
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillText(`GEOLOGIST: ${geologist.toUpperCase()}`, padding, y);
+
+    ctx.fillStyle = '#ffffff';
+    for (const dLine of descLines) {
+      y += lineHeight;
+      ctx.fillText(dLine, padding, y);
+    }
+
+    canvas.toBlob(blob => {
+      stagedBlob = blob;
+      $('imgPreview').src = URL.createObjectURL(blob);
+      $('previewWrap').classList.remove('hide');
+      $('btnSave').classList.remove('hide');
+    }, 'image/jpeg', 0.88);
+  }
+
+  $('geologist').addEventListener('input', () => { if (stagedImage) renderStampedPhoto(); });
+  $('description').addEventListener('input', () => { if (stagedImage) renderStampedPhoto(); });
+
+  // 5. IndexedDB Storage
+  function initDB() {
+    const req = indexedDB.open('GeologyFieldLog', 1);
+    req.onupgradeneeded = e => {
+      const store = e.target.result.createObjectStore('samples', { keyPath: 'id', autoIncrement: true });
+      store.createIndex('timestamp', 'timestamp');
+    };
+    req.onsuccess = e => {
+      db = e.target.result;
+      loadSavedRecords();
+    };
+  }
+
+  $('btnSave').onclick = () => {
+    if (!stagedBlob) return;
+    const now = new Date();
+    const record = {
+      timestamp: now.toISOString(),
+      date: now.toISOString().slice(0, 10),
+      time: now.toTimeString().slice(0, 8),
+      lat: bestGps ? bestGps.lat : null,
+      lon: bestGps ? bestGps.lon : null,
+      accuracy: bestGps ? bestGps.acc : 'No Fix',
+      geologist: $('geologist').value.trim() || 'Unknown',
+      description: $('description').value.trim() || '',
+      photo: stagedBlob
+    };
+
+    const tx = db.transaction('samples', 'readwrite');
+    tx.objectStore('samples').add(record).onsuccess = () => {
+      stagedImage = null;
+      stagedBlob = null;
+      $('camInput').value = '';
+      $('description').value = '';
+      $('previewWrap').classList.add('hide');
+      $('btnSave').classList.add('hide');
+      loadSavedRecords();
+    };
+  };
+
+  function loadSavedRecords() {
+    const tx = db.transaction('samples', 'readonly');
+    const store = tx.objectStore('samples');
+    const records = [];
+    store.openCursor(null, 'prev').onsuccess = e => {
+      const cursor = e.target.result;
+      if (cursor) {
+        records.push(cursor.value);
+        cursor.continue();
+      } else {
+        renderRecords(records);
+      }
+    };
+  }
+
+  function renderRecords(records) {
+    $('logCount').textContent = `Logged Samples (${records.length})`;
+    const container = $('recordsList');
+    container.innerHTML = '';
+
+    if (records.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:8px 0">No field records saved yet.</div>';
+      return;
+    }
+
+    records.forEach(r => {
+      const card = document.createElement('div');
+      card.className = 'rec-card';
+      const imgUrl = URL.createObjectURL(r.photo);
+      
+      const posText = r.lat ? `${r.lat.toFixed(5)}, ${r.lon.toFixed(5)} (±${r.accuracy}m)` : 'No GPS';
+      
+      card.innerHTML = `
+        <img src="${imgUrl}" alt="Thumbnail">
+        <div class="rec-info">
+          <b>${r.date} ${r.time}</b>
+          <div style="color:var(--accent);font-weight:600">${posText}</div>
+          <div><strong>Geo:</strong> ${r.geologist}</div>
+          <div style="color:var(--muted)">${r.description}</div>
+          <div style="margin-top:4px">
+            <a href="${imgUrl}" download="GEO_${r.date}_${r.time.replace(/:/g,'')}.jpg" style="color:var(--ok);font-weight:600;text-decoration:none;font-size:.8rem;margin-right:8px">Download Photo</a>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  // 6. CSV Exporter
+  $('btnExportCsv').onclick = () => {
+    const tx = db.transaction('samples', 'readonly');
+    const req = tx.objectStore('samples').getAll();
+    req.onsuccess = () => {
+      const list = req.result;
+      if (!list.length) {
+        alert('No records to export');
+        return;
+      }
+      const escape = str => `"${String(str || '').replace(/"/g, '""')}"`;
+      let csv = 'ID,Date,Time,Latitude,Longitude,Accuracy_m,Geologist,Description\n';
+      list.forEach(r => {
+        csv += `${r.id},${r.date},${r.time},${r.lat || ''},${r.lon || ''},${r.accuracy || ''},${escape(r.geologist)},${escape(r.description)}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Geology_Field_Log_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    };
+  };
+
+  // Auto-start on load
+  initDB();
+  startHardwareGps();
+})();
+</script>
+</body>
+</html>
