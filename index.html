@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Geo-Tag Field Photos (High-Precision GPS)</title>
+<title>Geology Field Photo Logger</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#121417">
 <meta name="mobile-web-app-capable" content="yes">
@@ -39,24 +39,30 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
 .rec-info b{color:var(--ink);display:block;font-size:.95rem}
 .banner{background:#451a03;border:1px solid #d97706;color:#fef3c7;padding:10px;border-radius:8px;font-size:.85rem;margin-bottom:12px;line-height:1.4}
 .hide{display:none}
+
+select{width:100%;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:10px;font:inherit;margin:4px 0 10px}
+.coord-display{white-space:pre-line}
+.row{display:flex;gap:8px;margin:6px 0 10px}.row>*{flex:1}
+.seg{display:flex;gap:6px;margin:4px 0 10px}.seg button{flex:1;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:9px 0;font:inherit;font-size:.85rem}
+.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.modal{position:fixed;inset:0;background:var(--bg);z-index:50;display:flex;flex-direction:column}
+.mbody{flex:1;overflow-y:auto;padding:12px;max-width:580px;width:100%;margin:0 auto}
+.mbar{display:flex;gap:10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--line)}.mbar .btn{flex:1}
+#edCanvas,#edLegacy{width:100%;max-height:48vh;object-fit:contain;background:#000;border-radius:8px;display:block;margin-bottom:10px}
+small{color:var(--muted);display:block;margin:-6px 0 10px;font-size:.78rem}
+.rec-info .acts{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}.rec-info .acts .btn{padding:5px 10px;font-size:.78rem}
+.rec-card img{object-fit:contain;background:#000}
 </style>
 </head>
 <body>
 <main>
   <h1>Geology Field Photo Logger</h1>
-
-  <div id="iframeWarning" class="banner hide">
-    <strong>Running inside a frame/preview panel:</strong> Browsers restrict direct hardware GPS communication inside embedded views. Click below to launch in your browser's main window for high-precision satellite accuracy.
-    <div style="margin-top:8px">
-      <button type="button" class="btn" id="btnBreakout">Open in Full Browser Tab</button>
-    </div>
-  </div>
+  <div id="iframeWarning" class="banner hide"><strong>Running inside a frame/preview panel:</strong> GPS is restricted here. <div style="margin-top:8px"><button type="button" class="btn" id="btnBreakout">Open in Full Browser Tab</button></div></div>
 
   <section class="panel">
     <div id="gpsBox" class="gps-box">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:.8rem;color:var(--muted);font-weight:700">HARDWARE SATELLITE GPS</span>
-        <span id="gpsStatus">Acquiring satellites...</span>
+        <span style="font-size:.8rem;color:var(--muted);font-weight:700">HARDWARE SATELLITE GPS</span><span id="gpsStatus">Acquiring satellites...</span>
       </div>
       <div id="coords" class="coord-display" style="margin:6px 0">Waiting for fix...</div>
       <div id="accBox"><span class="acc-tag acc-bad">No Fix</span></div>
@@ -66,31 +72,30 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
       <button type="button" class="btn" id="btnRestartGps" style="flex:1">Force Satellite Lock</button>
       <button type="button" class="btn" id="btnToggleManual">Manual Override</button>
     </div>
-    
     <div id="manualBox" class="hide" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><label>Latitude</label><input type="number" step="any" id="manLat" placeholder="23.456789"></div>
-        <div><label>Longitude</label><input type="number" step="any" id="manLon" placeholder="85.123456"></div>
+        <div><label>Latitude</label><input type="number" step="any" id="manLat" placeholder="22.124009"></div>
+        <div><label>Longitude</label><input type="number" step="any" id="manLon" placeholder="85.486027"></div>
       </div>
       <button type="button" class="btn" id="btnApplyManual" style="width:100%">Set Manual Coordinates</button>
     </div>
   </section>
 
   <section class="panel">
+    <label>Photo tag defaults</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+      <select id="setFmt"><option value="latlon">Lat / Long</option><option value="utm">UTM</option><option value="both">Lat/Long + UTM</option></select>
+      <select id="setZone"><option value="45">UTM zone 45N</option><option value="44">UTM zone 44N</option><option value="46">UTM zone 46N</option><option value="auto">UTM zone auto</option></select>
+      <select id="setAddr"><option value="short">Address: short</option><option value="detailed">Address: detailed</option><option value="off">Address: off</option></select>
+      <select id="setPos"><option value="bottom">Tag: bottom</option><option value="top">Tag: top</option><option value="left">Tag: left</option><option value="right">Tag: right</option></select>
+    </div>
+    <small style="margin-top:6px">UTM is WGS 84. Address needs internet at capture time (or fetch/type it later).</small>
     <label for="geologist">Geologist Name</label>
     <input type="text" id="geologist" placeholder="e.g. Dr. A. Sharma">
-
     <label for="description">Outcrop / Lithology Description</label>
     <textarea id="description" placeholder="Formation, lithology, strike/dip, structural notes, sample ID..."></textarea>
-
     <input type="file" id="camInput" accept="image/*" capture="environment" class="hide">
     <button type="button" class="btn btn-primary" id="btnSnap">Capture / Select Photo</button>
-
-    <div id="previewWrap" class="preview-wrap hide">
-      <img id="imgPreview" alt="Field preview">
-    </div>
-
-    <button type="button" class="btn btn-primary hide" id="btnSave" style="background:var(--ok);margin-top:10px">Save to Log</button>
   </section>
 
   <section class="panel">
@@ -102,341 +107,317 @@ label{font-size:.85rem;font-weight:600;color:var(--muted);text-transform:upperca
   </section>
 </main>
 
+<div id="ed" class="modal hide">
+  <div class="mbody">
+    <h2 id="edTitle" style="margin:4px 0 10px;font-size:1.1rem"></h2>
+    <canvas id="edCanvas"></canvas><img id="edLegacy" class="hide" alt="">
+    <div id="edTools">
+      <label>Tag position on photo</label>
+      <div class="seg" id="posSeg"><button data-p="bottom">Bottom</button><button data-p="top">Top</button><button data-p="left">Left</button><button data-p="right">Right</button></div>
+      <div class="row"><button type="button" class="btn" id="rotL">&#10226; Rotate left</button><button type="button" class="btn" id="rotR">Rotate right &#10227;</button></div>
+      <label>Coordinates in tag</label>
+      <select id="edFmt"><option value="latlon">Lat / Long</option><option value="utm">UTM (WGS 84)</option><option value="both">Lat/Long + UTM</option></select>
+    </div>
+    <div id="legacyNote" class="banner hide">This photo was saved with the older burned-in tag, so only the text details below can be edited (the image itself stays as saved).</div>
+    <label for="edGeo">Geologist Name</label><input id="edGeo" type="text">
+    <label for="edDesc">Description</label><textarea id="edDesc"></textarea>
+    <label for="edAddr">Address (editable)</label><input id="edAddr" type="text" placeholder="e.g. Noamundi, India">
+    <small id="addrNote"></small>
+    <div class="row"><button type="button" class="btn" id="btnAddr">Fetch address</button><button type="button" class="btn" id="btnUseGps">Use latest GPS</button></div>
+  </div>
+  <div class="mbar"><button type="button" class="btn" id="edCancel">Cancel</button><button type="button" class="btn btn-primary" id="edSave" style="background:var(--ok);border-color:var(--ok)">Save</button></div>
+</div>
+
 <script>
 (function(){
-  // Offline support: register the service worker and ask Chrome to protect saved data
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    });
-  }
-  if (navigator.storage && navigator.storage.persist) {
-    navigator.storage.persist().catch(() => {});
-  }
+  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
-  // DOM references
   const $ = id => document.getElementById(id);
-  let bestGps = null;
-  let activeWatchId = null;
-  let stagedImage = null;
-  let stagedBlob = null;
-  let db = null;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+  let bestGps = null, activeWatchId = null, db = null, ed = null, recMap = {}, urls = [];
+  const S = { fmt: lsGet('gl.fmt','latlon'), zone: lsGet('gl.zone','45'), addr: lsGet('gl.addr','short'), pos: lsGet('gl.pos','bottom') };
+  [['setFmt','fmt'],['setZone','zone'],['setAddr','addr'],['setPos','pos']].forEach(([id,k]) => {
+    $(id).value = S[k];
+    $(id).onchange = () => { S[k] = $(id).value; lsSet('gl.'+k, S[k]); showLive(); };
+  });
+  $('geologist').value = lsGet('gl.geo','');
+  $('geologist').oninput = () => lsSet('gl.geo', $('geologist').value);
 
-  // 1. Detect iframe restrictions
-  if (window.self !== window.top) {
-    $('iframeWarning').classList.remove('hide');
-    $('btnBreakout').onclick = () => window.open(window.location.href, '_blank');
+  if (window.self !== window.top) { $('iframeWarning').classList.remove('hide'); $('btnBreakout').onclick = () => window.open(location.href, '_blank'); }
+
+  // ---------- UTM (WGS 84, Kruger series) ----------
+  function toUTM(lat, lon, zoneMode) {
+    let zone = zoneMode === 'auto' ? Math.floor((lon + 180) / 6) + 1 : parseInt(zoneMode, 10);
+    zone = Math.min(60, Math.max(1, zone || 45));
+    const a = 6378137, f = 1 / 298.257223563, n = f / (2 - f), k0 = 0.9996, rad = Math.PI / 180;
+    const A = a / (1 + n) * (1 + n*n/4 + n**4/64);
+    const al = [n/2 - 2*n*n/3 + 5*n**3/16, 13*n*n/48 - 3*n**3/5, 61*n**3/240];
+    const phi = lat * rad, dl = (lon - ((zone - 1) * 6 - 180 + 3)) * rad;
+    const q = 2 * Math.sqrt(n) / (1 + n), s = Math.sin(phi);
+    const t = Math.sinh(Math.atanh(s) - q * Math.atanh(q * s));
+    const xi0 = Math.atan2(t, Math.cos(dl)), eta0 = Math.asinh(Math.sin(dl) / Math.sqrt(1 + t*t));
+    let xi = xi0, eta = eta0;
+    al.forEach((aj, i) => { const j = 2 * (i + 1); xi += aj * Math.sin(j*xi0) * Math.cosh(j*eta0); eta += aj * Math.cos(j*xi0) * Math.sinh(j*eta0); });
+    return { zone, hemi: lat >= 0 ? 'N' : 'S', e: Math.round(500000 + k0*A*eta), n: Math.round((lat >= 0 ? 0 : 1e7) + k0*A*xi) };
+  }
+  const utmText = (m) => { const u = toUTM(m.lat, m.lon, m.zone); return `UTM ${u.zone}${u.hemi} (WGS 84): E ${u.e} | N ${u.n}`; };
+
+  function coordLines(m, fmt) {
+    if (m.lat == null) return ['Location: GPS pending / not locked'];
+    const acc = m.source === 'Manual Entry' ? ' | [MANUAL]' : ` | [±${m.acc}m${m.altitude ? ', Alt: ' + m.altitude + 'm' : ''}]`;
+    const out = [];
+    if (fmt !== 'utm') out.push(`Latitude: ${m.lat.toFixed(6)}° | Longitude: ${m.lon.toFixed(6)}°${acc}`);
+    if (fmt !== 'latlon') out.push(utmText(m) + (fmt === 'utm' ? acc : ''));
+    return out;
   }
 
-  // 2. High-Precision Hardware GPS Lock
+  // ---------- GPS ----------
+  function showLive() {
+    if (!bestGps) return;
+    $('coords').textContent = coordLines(bestGps, S.fmt).map(l => l.replace(/ \| \[.*\]$/, '').replace('Latitude: ','').replace(' | Longitude: ',', ')).join('\n');
+  }
   function startHardwareGps() {
-    if (!navigator.geolocation) {
-      $('gpsStatus').textContent = 'Geolocation not supported by this browser';
-      return;
-    }
-
-    if (activeWatchId !== null) {
-      navigator.geolocation.clearWatch(activeWatchId);
-    }
-
+    if (!navigator.geolocation) { $('gpsStatus').textContent = 'Geolocation not supported'; return; }
+    if (activeWatchId !== null) navigator.geolocation.clearWatch(activeWatchId);
     $('gpsBox').className = 'gps-box locking';
     $('gpsStatus').textContent = 'Connecting to GPS hardware...';
     $('coords').textContent = 'Searching satellites...';
     $('accBox').innerHTML = '<span class="acc-tag acc-med">Powering GPS Chip...</span>';
-
-    const highAccuracyOptions = {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 30000
-    };
-
-    activeWatchId = navigator.geolocation.watchPosition(
-      pos => {
-        const c = pos.coords;
-        const acc = Math.round(c.accuracy);
-        bestGps = {
-          lat: c.latitude,
-          lon: c.longitude,
-          acc: acc,
-          altitude: c.altitude !== null ? Math.round(c.altitude) : null,
-          time: new Date(pos.timestamp),
-          source: 'GPS Hardware'
-        };
-
-        if (acc <= 15) {
-          $('gpsBox').className = 'gps-box locked';
-          $('gpsStatus').textContent = 'Strong Satellite Fix';
-          $('accBox').innerHTML = `<span class="acc-tag acc-good">±${acc}m (High Precision)</span>`;
-        } else if (acc <= 50) {
-          $('gpsBox').className = 'gps-box locked';
-          $('gpsStatus').textContent = 'Moderate Satellite Fix';
-          $('accBox').innerHTML = `<span class="acc-tag acc-med">±${acc}m (Refining...)</span>`;
-        } else {
-          $('gpsBox').className = 'gps-box locking';
-          $('gpsStatus').textContent = 'Refining Satellites...';
-          $('accBox').innerHTML = `<span class="acc-tag acc-bad">±${acc}m (Coarse - stay outdoors)</span>`;
-        }
-
-        $('coords').textContent = `${c.latitude.toFixed(6)}, ${c.longitude.toFixed(6)}`;
-        $('satNotes').textContent = c.altitude !== null ? `Altitude: ~${Math.round(c.altitude)}m MSL` : 'Acquiring altitude...';
-
-        if (stagedImage) renderStampedPhoto();
-      },
-      err => {
-        let reason = 'GPS error';
-        if (err.code === 1) reason = 'Permission denied. Allow "Precise Location" in browser & phone settings.';
-        else if (err.code === 2) reason = 'Position unavailable. Step outdoors away from tall structures.';
-        else if (err.code === 3) reason = 'Satellite acquisition timed out. Retrying...';
-        
-        $('gpsBox').className = 'gps-box';
-        $('gpsStatus').textContent = 'No Satellite Lock';
-        $('accBox').innerHTML = `<span class="acc-tag acc-bad">${reason}</span>`;
-      },
-      highAccuracyOptions
-    );
+    activeWatchId = navigator.geolocation.watchPosition(pos => {
+      const c = pos.coords, acc = Math.round(c.accuracy);
+      bestGps = { lat: c.latitude, lon: c.longitude, acc, altitude: c.altitude !== null ? Math.round(c.altitude) : null, source: 'GPS Hardware' };
+      if (acc <= 15) { $('gpsBox').className = 'gps-box locked'; $('gpsStatus').textContent = 'Strong Satellite Fix'; $('accBox').innerHTML = `<span class="acc-tag acc-good">±${acc}m (High Precision)</span>`; }
+      else if (acc <= 50) { $('gpsBox').className = 'gps-box locked'; $('gpsStatus').textContent = 'Moderate Satellite Fix'; $('accBox').innerHTML = `<span class="acc-tag acc-med">±${acc}m (Refining...)</span>`; }
+      else { $('gpsBox').className = 'gps-box locking'; $('gpsStatus').textContent = 'Refining Satellites...'; $('accBox').innerHTML = `<span class="acc-tag acc-bad">±${acc}m (Coarse - stay outdoors)</span>`; }
+      showLive();
+      $('satNotes').textContent = c.altitude !== null ? `Altitude: ~${Math.round(c.altitude)}m MSL` : 'Acquiring altitude...';
+    }, err => {
+      const reason = err.code === 1 ? 'Permission denied. Allow "Precise Location" in browser & phone settings.' : err.code === 2 ? 'Position unavailable. Step outdoors.' : 'Satellite acquisition timed out. Retrying...';
+      $('gpsBox').className = 'gps-box'; $('gpsStatus').textContent = 'No Satellite Lock';
+      $('accBox').innerHTML = `<span class="acc-tag acc-bad">${reason}</span>`;
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
   }
-
   $('btnRestartGps').onclick = startHardwareGps;
-
-  // 3. Manual coordinate overrides
   $('btnToggleManual').onclick = () => $('manualBox').classList.toggle('hide');
   $('btnApplyManual').onclick = () => {
-    const lat = parseFloat($('manLat').value);
-    const lon = parseFloat($('manLon').value);
-    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-      alert('Please enter valid coordinates in decimal degrees.');
-      return;
-    }
+    const lat = parseFloat($('manLat').value), lon = parseFloat($('manLon').value);
+    if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) { alert('Please enter valid coordinates in decimal degrees.'); return; }
     if (activeWatchId !== null) navigator.geolocation.clearWatch(activeWatchId);
-    bestGps = { lat, lon, acc: 0, altitude: null, time: new Date(), source: 'Manual Entry' };
-    $('gpsBox').className = 'gps-box locked';
-    $('gpsStatus').textContent = 'Manual Coordinate Lock';
-    $('coords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-    $('accBox').innerHTML = `<span class="acc-tag acc-good">Exact (Manual)</span>`;
-    $('manualBox').classList.add('hide');
-    if (stagedImage) renderStampedPhoto();
+    bestGps = { lat, lon, acc: 0, altitude: null, source: 'Manual Entry' };
+    $('gpsBox').className = 'gps-box locked'; $('gpsStatus').textContent = 'Manual Coordinate Lock';
+    $('accBox').innerHTML = '<span class="acc-tag acc-good">Exact (Manual)</span>';
+    $('manualBox').classList.add('hide'); showLive();
   };
 
-  // 4. Image Capture & Dynamic Canvas Stamping
-  $('btnSnap').onclick = () => $('camInput').click();
-
-  $('camInput').onchange = e => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      stagedImage = img;
-      renderStampedPhoto();
-      URL.revokeObjectURL(url);
-    };
-    img.src = url;
-  };
-
-  function renderStampedPhoto() {
-    if (!stagedImage) return;
-
-    const img = stagedImage;
-    const maxDim = 2000;
-    const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
-    const w = Math.round(img.width * scale);
-    const h = Math.round(img.height * scale);
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    const ctx = canvas.getContext('2d');
-
-    ctx.drawImage(img, 0, 0, w, h);
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = now.toTimeString().slice(0, 8);
-    const geologist = ($('geologist').value || 'Not Specified').trim();
-    const desc = ($('description').value || 'No description').trim();
-
-    let latLonStr = 'Latitude: GPS PENDING | Longitude: GPS PENDING';
-    let accStr = '';
-    if (bestGps) {
-      latLonStr = `Latitude: ${bestGps.lat.toFixed(6)}° | Longitude: ${bestGps.lon.toFixed(6)}°`;
-      accStr = bestGps.source === 'Manual Entry' ? ' | [MANUAL]' : ` | [±${bestGps.acc}m${bestGps.altitude !== null ? ', Alt: ' + bestGps.altitude + 'm' : ''}]`;
-    }
-
-    const fontSize = Math.max(18, Math.round(w / 44));
-    const lineHeight = fontSize * 1.35;
-    const padding = Math.round(fontSize * 0.8);
-    ctx.font = `bold ${fontSize}px ui-monospace, "SF Mono", monospace`;
-
-    const maxTextWidth = w - padding * 2;
-    function wrapLines(prefix, text) {
-      const words = (prefix + text).split(' ');
-      const lines = [];
-      let current = words[0];
-      for (let i = 1; i < words.length; i++) {
-        const test = current + ' ' + words[i];
-        if (ctx.measureText(test).width < maxTextWidth) {
-          current = test;
-        } else {
-          lines.push(current);
-          current = words[i];
-        }
-      }
-      lines.push(current);
-      return lines;
-    }
-
-    const descLines = wrapLines('Description: ', desc);
-    const totalLines = 3 + descLines.length;
-    const bannerHeight = padding * 2 + totalLines * lineHeight;
-
-    ctx.fillStyle = 'rgba(10, 14, 18, 0.85)';
-    ctx.fillRect(0, h - bannerHeight, w, bannerHeight);
-
-    ctx.fillStyle = bestGps && bestGps.acc <= 15 ? '#22c55e' : '#e65c00';
-    ctx.fillRect(0, h - bannerHeight, Math.round(fontSize * 0.4), bannerHeight);
-
-    let y = h - bannerHeight + padding + fontSize;
-
-    ctx.fillStyle = '#fde047';
-    ctx.fillText(`Date: ${dateStr} | Time: ${timeStr}`, padding, y);
-
-    y += lineHeight;
-    ctx.fillText(latLonStr + accStr, padding, y);
-
-    y += lineHeight;
-    ctx.fillStyle = '#38bdf8';
-    ctx.fillText(`GEOLOGIST: ${geologist.toUpperCase()}`, padding, y);
-
-    ctx.fillStyle = '#ffffff';
-    for (const dLine of descLines) {
-      y += lineHeight;
-      ctx.fillText(dLine, padding, y);
-    }
-
-    canvas.toBlob(blob => {
-      stagedBlob = blob;
-      $('imgPreview').src = URL.createObjectURL(blob);
-      $('previewWrap').classList.remove('hide');
-      $('btnSave').classList.remove('hide');
-    }, 'image/jpeg', 0.88);
+  // ---------- Reverse geocoding (needs internet) ----------
+  const addrCache = {};
+  async function fetchAddress(lat, lon, mode) {
+    const key = lat.toFixed(3) + ',' + lon.toFixed(3) + mode;
+    if (addrCache[key]) return addrCache[key];
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&addressdetails=1&accept-language=en&lat=${lat}&lon=${lon}`, { signal: ctl.signal });
+      const a = (await r.json()).address || {};
+      const loc = a.hamlet || a.village || a.suburb || a.neighbourhood || a.town || a.city_district || a.city || a.municipality;
+      const parts = mode === 'detailed' ? [loc, a.state_district || a.county, a.state, a.country] : [loc || a.state_district || a.county || a.state, a.country];
+      const txt = parts.filter((p, i, arr) => p && p !== arr[i-1]).join(', ');
+      if (txt) addrCache[key] = txt;
+      return txt || null;
+    } catch (e) { return null; } finally { clearTimeout(tm); }
   }
 
-  $('geologist').addEventListener('input', () => { if (stagedImage) renderStampedPhoto(); });
-  $('description').addEventListener('input', () => { if (stagedImage) renderStampedPhoto(); });
+  // ---------- Stamp renderer: tag goes in a strip OUTSIDE the photo ----------
+  function wrap(ctx, text, maxW) {
+    const out = [];
+    String(text).split('\n').forEach(par => {
+      let cur = '';
+      par.split(' ').forEach(w => {
+        while (ctx.measureText(w).width > maxW && w.length > 1) { let k = w.length - 1; while (k > 1 && ctx.measureText(w.slice(0, k)).width > maxW) k--; if (cur) { out.push(cur); cur = ''; } out.push(w.slice(0, k)); w = w.slice(k); }
+        const t = cur ? cur + ' ' + w : w;
+        if (cur && ctx.measureText(t).width > maxW) { out.push(cur); cur = w; } else cur = t;
+      });
+      out.push(cur);
+    });
+    return out;
+  }
+  function renderStamp(canvas, base, m, o) {
+    const bw = base.naturalWidth || base.width, bh = base.naturalHeight || base.height;
+    const rot = ((o.rotation % 360) + 360) % 360, swap = rot === 90 || rot === 270;
+    const iw = swap ? bh : bw, ih = swap ? bw : bh;
+    const fs = Math.max(16, Math.round(Math.min(iw, ih) / 40)), lh = Math.round(fs * 1.4), pad = Math.round(fs * 0.8), bar = Math.round(fs * 0.35);
+    const font = `bold ${fs}px ui-monospace, "SF Mono", Menlo, monospace`;
+    const side = o.position === 'left' || o.position === 'right';
+    const tw = side ? Math.min(Math.round(iw * 0.5), Math.round(fs * 0.62 * 38)) : iw;
+    const mc = document.createElement('canvas').getContext('2d'); mc.font = font;
+    const items = [[`Date: ${m.date} | Time: ${m.time}`, '#fde047']];
+    coordLines(m, o.fmt).forEach(l => items.push([l, '#fde047']));
+    if (m.address) items.push([`Location: ${m.address}`, '#86efac']);
+    items.push([`GEOLOGIST: ${(m.geologist || 'Not Specified').toUpperCase()}`, '#38bdf8']);
+    items.push([`Description: ${m.description || 'No description'}`, '#ffffff']);
+    const lines = [];
+    items.forEach(([t, c]) => wrap(mc, t, tw - pad * 2 - bar).forEach(x => lines.push([x, c])));
+    const th = pad * 2 + lines.length * lh;
+    let cw, ch, px = 0, py = 0, sx = 0, sy = 0, sw = tw, sh = th;
+    if (!side) { cw = iw; ch = ih + th; if (o.position === 'top') py = th; else sy = ih; }
+    else { cw = iw + tw; ch = Math.max(ih, th); sh = ch; if (o.position === 'left') px = tw; else sx = iw; }
+    canvas.width = cw; canvas.height = ch;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0b0f14'; ctx.fillRect(0, 0, cw, ch);
+    ctx.save(); ctx.translate(px + iw / 2, py + ih / 2); ctx.rotate(rot * Math.PI / 180); ctx.drawImage(base, -bw / 2, -bh / 2, bw, bh); ctx.restore();
+    ctx.fillStyle = m.lat != null && m.acc <= 15 ? '#22c55e' : '#e65c00'; ctx.fillRect(sx, sy, bar, sh);
+    ctx.font = font; ctx.textBaseline = 'alphabetic';
+    lines.forEach(([t, c], i) => { ctx.fillStyle = c; ctx.fillText(t, sx + bar + pad, sy + pad + fs + i * lh); });
+  }
 
-  // 5. IndexedDB Storage
+  // ---------- Editor / preview modal (new photo + edit from history) ----------
+  const toBlob = (cv, q) => new Promise(res => cv.toBlob(res, 'image/jpeg', q));
+  const imgFromBlob = b => new Promise((res, rej) => { const i = new Image(), u = URL.createObjectURL(b); i.onload = () => { res(i); }; i.onerror = rej; i.src = u; });
+
+  function draw() {
+    if (!ed || ed.legacy) return;
+    renderStamp($('edCanvas'), ed.base, ed.m, ed);
+    document.querySelectorAll('#posSeg button').forEach(b => b.classList.toggle('on', b.dataset.p === ed.position));
+  }
+  function openEditor(state) {
+    ed = state;
+    $('edTitle').textContent = ed.mode === 'new' ? 'Preview before saving' : 'Edit log entry';
+    $('edGeo').value = ed.m.geologist || ''; $('edDesc').value = ed.m.description || ''; $('edAddr').value = ed.m.address || ''; $('edFmt').value = ed.fmt;
+    $('edCanvas').classList.toggle('hide', !!ed.legacy); $('edLegacy').classList.toggle('hide', !ed.legacy);
+    $('edTools').classList.toggle('hide', !!ed.legacy); $('legacyNote').classList.toggle('hide', !ed.legacy);
+    if (ed.legacy) $('edLegacy').src = ed.legacyUrl;
+    $('btnUseGps').classList.toggle('hide', ed.mode !== 'new');
+    $('addrNote').textContent = '';
+    $('ed').classList.remove('hide'); document.body.style.overflow = 'hidden';
+    draw();
+  }
+  function closeEditor() { $('ed').classList.add('hide'); document.body.style.overflow = ''; ed = null; }
+  async function getAddr(auto) {
+    if (!ed || ed.m.lat == null) return;
+    const me = ed; $('addrNote').textContent = 'Fetching address...';
+    const a = await fetchAddress(me.m.lat, me.m.lon, S.addr === 'detailed' ? 'detailed' : 'short');
+    if (ed !== me) return;
+    if (a && !(auto && me.addrEdited)) { me.m.address = a; $('edAddr').value = a; $('addrNote').textContent = ''; draw(); }
+    else if (!a) $('addrNote').textContent = 'Address unavailable (offline?). Type it manually, or fetch later from Log History.';
+  }
+  $('edGeo').oninput = () => { ed.m.geologist = $('edGeo').value; draw(); };
+  $('edDesc').oninput = () => { ed.m.description = $('edDesc').value; draw(); };
+  $('edAddr').oninput = () => { ed.m.address = $('edAddr').value.trim(); ed.addrEdited = true; draw(); };
+  $('edFmt').onchange = () => { ed.fmt = $('edFmt').value; draw(); };
+  document.querySelectorAll('#posSeg button').forEach(b => b.onclick = () => { ed.position = b.dataset.p; draw(); });
+  $('rotL').onclick = () => { ed.rotation -= 90; draw(); };
+  $('rotR').onclick = () => { ed.rotation += 90; draw(); };
+  $('btnAddr').onclick = () => getAddr(false);
+  $('btnUseGps').onclick = () => { if (!bestGps) { alert('No GPS fix yet.'); return; } Object.assign(ed.m, bestGps); ed.m.address = ''; $('edAddr').value = ''; draw(); if (S.addr !== 'off') getAddr(true); };
+  $('edCancel').onclick = closeEditor;
+
+  $('btnSnap').onclick = () => $('camInput').click();
+  $('camInput').onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    const img = await imgFromBlob(file);
+    const sc = Math.min(1, 2000 / Math.max(img.naturalWidth, img.naturalHeight));
+    const base = document.createElement('canvas'); base.width = Math.round(img.naturalWidth * sc); base.height = Math.round(img.naturalHeight * sc);
+    base.getContext('2d').drawImage(img, 0, 0, base.width, base.height);
+    const original = await toBlob(base, 0.92), now = new Date();
+    const m = { date: now.toISOString().slice(0, 10), time: now.toTimeString().slice(0, 8), lat: null, lon: null, acc: 'No Fix', altitude: null, source: '', zone: S.zone,
+      geologist: $('geologist').value.trim(), description: $('description').value.trim(), address: '' };
+    if (bestGps) Object.assign(m, bestGps);
+    openEditor({ mode: 'new', base, original, m, fmt: S.fmt, position: S.pos, rotation: 0 });
+    if (S.addr !== 'off') getAddr(true);
+    e.target.value = '';
+  };
+
+  $('edSave').onclick = async () => {
+    if (!ed) return;
+    const m = ed.m;
+    m.geologist = $('edGeo').value.trim() || 'Unknown'; m.description = $('edDesc').value.trim(); m.address = $('edAddr').value.trim();
+    let photo = null;
+    if (!ed.legacy) { draw(); photo = await toBlob($('edCanvas'), 0.9); }
+    const fields = { date: m.date, time: m.time, lat: m.lat, lon: m.lon, accuracy: m.acc, altitude: m.altitude, source: m.source, zone: m.zone, geologist: m.geologist, description: m.description, address: m.address };
+    const store = db.transaction('samples', 'readwrite').objectStore('samples');
+    if (ed.mode === 'new') {
+      store.add(Object.assign({ timestamp: new Date().toISOString(), photo, original: ed.original, fmt: ed.fmt, position: ed.position, rotation: ed.rotation }, fields)).onsuccess = () => { $('description').value = ''; closeEditor(); loadSavedRecords(); };
+    } else {
+      const rec = Object.assign({}, recMap[ed.id], fields);
+      if (!ed.legacy) Object.assign(rec, { photo, fmt: ed.fmt, position: ed.position, rotation: ed.rotation });
+      store.put(rec).onsuccess = () => { closeEditor(); loadSavedRecords(); };
+    }
+  };
+
+  async function editRecord(r) {
+    const m = { date: r.date, time: r.time, lat: r.lat, lon: r.lon, acc: r.accuracy, altitude: r.altitude || null, source: r.source || '', zone: r.zone || '45', geologist: r.geologist, description: r.description, address: r.address || '' };
+    if (!r.original) { openEditor({ mode: 'edit', id: r.id, legacy: true, legacyUrl: URL.createObjectURL(r.photo), m, fmt: r.fmt || 'latlon' }); return; }
+    const base = await imgFromBlob(r.original);
+    openEditor({ mode: 'edit', id: r.id, base, m, fmt: r.fmt || 'latlon', position: r.position || 'bottom', rotation: r.rotation || 0 });
+  }
+
+  // ---------- Storage + history ----------
   function initDB() {
     const req = indexedDB.open('GeologyFieldLog', 1);
-    req.onupgradeneeded = e => {
-      const store = e.target.result.createObjectStore('samples', { keyPath: 'id', autoIncrement: true });
-      store.createIndex('timestamp', 'timestamp');
-    };
-    req.onsuccess = e => {
-      db = e.target.result;
-      loadSavedRecords();
-    };
+    req.onupgradeneeded = e => e.target.result.createObjectStore('samples', { keyPath: 'id', autoIncrement: true }).createIndex('timestamp', 'timestamp');
+    req.onsuccess = e => { db = e.target.result; loadSavedRecords(); };
   }
-
-  $('btnSave').onclick = () => {
-    if (!stagedBlob) return;
-    const now = new Date();
-    const record = {
-      timestamp: now.toISOString(),
-      date: now.toISOString().slice(0, 10),
-      time: now.toTimeString().slice(0, 8),
-      lat: bestGps ? bestGps.lat : null,
-      lon: bestGps ? bestGps.lon : null,
-      accuracy: bestGps ? bestGps.acc : 'No Fix',
-      geologist: $('geologist').value.trim() || 'Unknown',
-      description: $('description').value.trim() || '',
-      photo: stagedBlob
-    };
-
-    const tx = db.transaction('samples', 'readwrite');
-    tx.objectStore('samples').add(record).onsuccess = () => {
-      stagedImage = null;
-      stagedBlob = null;
-      $('camInput').value = '';
-      $('description').value = '';
-      $('previewWrap').classList.add('hide');
-      $('btnSave').classList.add('hide');
-      loadSavedRecords();
-    };
-  };
-
   function loadSavedRecords() {
-    const tx = db.transaction('samples', 'readonly');
-    const store = tx.objectStore('samples');
     const records = [];
-    store.openCursor(null, 'prev').onsuccess = e => {
-      const cursor = e.target.result;
-      if (cursor) {
-        records.push(cursor.value);
-        cursor.continue();
-      } else {
-        renderRecords(records);
-      }
+    db.transaction('samples', 'readonly').objectStore('samples').openCursor(null, 'prev').onsuccess = e => {
+      const c = e.target.result;
+      if (c) { records.push(c.value); c.continue(); } else renderRecords(records);
     };
   }
-
-  function renderRecords(records) {
-    $('logCount').textContent = `Logged Samples (${records.length})`;
-    const container = $('recordsList');
-    container.innerHTML = '';
-
-    if (records.length === 0) {
-      container.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:8px 0">No field records saved yet.</div>';
-      return;
+  const fname = r => `GEO_${r.date}_${r.time.replace(/:/g, '')}.jpg`;
+  const recText = r => {
+    const m = { lat: r.lat, lon: r.lon, acc: r.accuracy, altitude: r.altitude, source: r.source, zone: r.zone || '45' };
+    return [`${r.date} ${r.time}`, ...coordLines(m, r.fmt || 'latlon'), r.address, `Geologist: ${r.geologist}`, r.description].filter(Boolean).join('\n');
+  };
+  async function shareRecord(r) {
+    const file = new File([r.photo], fname(r), { type: 'image/jpeg' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: 'Geo-tagged field photo', text: recText(r) }); } catch (e) { if (e.name !== 'AbortError') alert('Share failed: ' + e.message); }
+    } else {
+      alert('File sharing is not supported on this browser. Use Download instead.');
     }
-
+  }
+  function renderRecords(records) {
+    urls.forEach(URL.revokeObjectURL); urls = []; recMap = {};
+    $('logCount').textContent = `Logged Samples (${records.length})`;
+    const box = $('recordsList'); box.innerHTML = '';
+    if (!records.length) { box.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:8px 0">No field records saved yet.</div>'; return; }
     records.forEach(r => {
-      const card = document.createElement('div');
-      card.className = 'rec-card';
-      const imgUrl = URL.createObjectURL(r.photo);
-      
-      const posText = r.lat ? `${r.lat.toFixed(5)}, ${r.lon.toFixed(5)} (±${r.accuracy}m)` : 'No GPS';
-      
-      card.innerHTML = `
-        <img src="${imgUrl}" alt="Thumbnail">
-        <div class="rec-info">
-          <b>${r.date} ${r.time}</b>
-          <div style="color:var(--accent);font-weight:600">${posText}</div>
-          <div><strong>Geo:</strong> ${r.geologist}</div>
-          <div style="color:var(--muted)">${r.description}</div>
-          <div style="margin-top:4px">
-            <a href="${imgUrl}" download="GEO_${r.date}_${r.time.replace(/:/g,'')}.jpg" style="color:var(--ok);font-weight:600;text-decoration:none;font-size:.8rem;margin-right:8px">Download Photo</a>
-          </div>
-        </div>
-      `;
-      container.appendChild(card);
+      recMap[r.id] = r;
+      const u = URL.createObjectURL(r.photo); urls.push(u);
+      const m = { lat: r.lat, lon: r.lon, acc: r.accuracy, altitude: r.altitude, source: r.source, zone: r.zone || '45' };
+      const pos = r.lat != null ? coordLines(m, r.fmt || 'latlon').map(esc).join('<br>') : 'No GPS';
+      const card = document.createElement('div'); card.className = 'rec-card';
+      card.innerHTML = `<img src="${u}" alt="Thumbnail"><div class="rec-info"><b>${esc(r.date)} ${esc(r.time)}</b>
+        <div style="color:var(--accent);font-weight:600;word-break:break-word">${pos}</div>
+        ${r.address ? `<div>📍 ${esc(r.address)}</div>` : ''}<div><strong>Geo:</strong> ${esc(r.geologist)}</div>
+        <div style="color:var(--muted)">${esc(r.description)}</div>
+        <div class="acts"><button class="btn" data-a="share">Share</button><button class="btn" data-a="edit">Edit</button><a class="btn" href="${u}" download="${fname(r)}">Download</a></div></div>`;
+      card.querySelector('[data-a=share]').onclick = () => shareRecord(r);
+      card.querySelector('[data-a=edit]').onclick = () => editRecord(r);
+      box.appendChild(card);
     });
   }
 
-  // 6. CSV Exporter
+  // ---------- CSV ----------
   $('btnExportCsv').onclick = () => {
-    const tx = db.transaction('samples', 'readonly');
-    const req = tx.objectStore('samples').getAll();
+    const req = db.transaction('samples', 'readonly').objectStore('samples').getAll();
     req.onsuccess = () => {
-      const list = req.result;
-      if (!list.length) {
-        alert('No records to export');
-        return;
-      }
-      const escape = str => `"${String(str || '').replace(/"/g, '""')}"`;
-      let csv = 'ID,Date,Time,Latitude,Longitude,Accuracy_m,Geologist,Description\n';
+      const list = req.result; if (!list.length) { alert('No records to export'); return; }
+      const q = s => `"${String(s == null ? '' : s).replace(/"/g, '""')}"`;
+      let csv = '\ufeffID,Date,Time,Latitude,Longitude,UTM_Zone,UTM_Easting,UTM_Northing,Accuracy_m,Altitude_m,Address,Geologist,Description\n';
       list.forEach(r => {
-        csv += `${r.id},${r.date},${r.time},${r.lat || ''},${r.lon || ''},${r.accuracy || ''},${escape(r.geologist)},${escape(r.description)}\n`;
+        const u = r.lat != null ? toUTM(r.lat, r.lon, r.zone || '45') : null;
+        csv += [r.id, r.date, r.time, r.lat ?? '', r.lon ?? '', u ? u.zone + u.hemi : '', u ? u.e : '', u ? u.n : '', r.accuracy ?? '', r.altitude ?? '', q(r.address), q(r.geologist), q(r.description)].join(',') + '\n';
       });
-      const blob = new Blob([csv], { type: 'text/csv' });
       const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `Geology_Field_Log_${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      a.download = `Geology_Field_Log_${new Date().toISOString().slice(0, 10)}.csv`; a.click();
     };
   };
 
-  // Auto-start on load
   initDB();
   startHardwareGps();
 })();
