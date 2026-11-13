@@ -87,6 +87,11 @@ dialog h3{margin:0 0 10px}
       <button type="button" data-val="both">Both</button>
     </div>
 
+    <div class="row" style="margin-bottom:10px">
+      <button type="button" class="btn" id="btnLock" style="flex:1" disabled>Lock Coordinates</button>
+      <label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;flex:1;font-size:.82rem"><input type="checkbox" id="autoLock"> Auto-lock when &le; 5 m</label>
+    </div>
+
     <div style="display:flex;gap:8px">
       <button type="button" class="btn" id="btnRestartGps" style="flex:1">Force Satellite Lock</button>
       <button type="button" class="btn" id="btnToggleManual">Manual Override</button>
@@ -152,10 +157,12 @@ dialog h3{margin:0 0 10px}
   <section class="panel">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap">
       <strong id="logCount">Logged Samples (0)</strong>
-      <div class="row">
+      <div class="row" style="flex-wrap:wrap">
         <button type="button" class="btn btn-sm" id="btnSelAll">Select all</button>
         <button type="button" class="btn btn-sm" id="btnShareSel" disabled>Share selected</button>
         <button type="button" class="btn btn-sm" id="btnExportCsv">Export CSV</button>
+        <button type="button" class="btn btn-sm" id="btnDelSel" disabled>Delete selected</button>
+        <button type="button" class="btn btn-sm" id="btnClear" style="border-color:var(--bad);color:#fca5a5">Clear log</button>
       </div>
     </div>
     <div id="recordsList"></div>
@@ -219,7 +226,10 @@ dialog h3{margin:0 0 10px}
   }
 
   // ---------- State ----------
-  let bestGps = null;
+  let bestGps = null;     // position used for photos (locked point if locked, else live)
+  let liveGps = null;     // latest raw GPS reading
+  let locked = null;      // frozen position, or null
+  let autoLock = store.get('geolog.autolock', '0') === '1';
   let activeWatchId = null;
   let staged = null;      // {img, url, rot, time, addrEdited, looked, meta, base, blob}
   let db = null;
@@ -315,11 +325,13 @@ dialog h3{margin:0 0 10px}
       pos => {
         const c = pos.coords;
         const acc = Math.round(c.accuracy);
-        bestGps = {
+        liveGps = {
           lat: c.latitude, lon: c.longitude, acc,
           altitude: c.altitude !== null ? Math.round(c.altitude) : null,
           time: new Date(pos.timestamp), source: 'GPS Hardware'
         };
+        if (!locked) bestGps = liveGps;
+        if (!locked && autoLock && acc <= 5) lockNow(true);
         if (acc <= 15) {
           $('gpsBox').className = 'gps-box locked';
           $('gpsStatus').textContent = 'Strong Satellite Fix';
@@ -335,6 +347,7 @@ dialog h3{margin:0 0 10px}
         }
         updateCoordDisplay();
         $('satNotes').textContent = c.altitude !== null ? `Altitude: ~${Math.round(c.altitude)}m MSL` : 'Acquiring altitude...';
+        refreshLockUI();
         if (staged) { scheduleRender(600); maybeLookupAddress(); }
       },
       err => {
@@ -351,6 +364,50 @@ dialog h3{margin:0 0 10px}
   }
   $('btnRestartGps').onclick = startHardwareGps;
 
+  // ---------- Lock coordinates ----------
+  function refreshLockUI(){
+    const b = $('btnLock');
+    b.disabled = !bestGps || (bestGps.source === 'Manual Entry' && !locked);
+    b.textContent = locked ? 'Unlock Coordinates' : 'Lock Coordinates';
+    b.style.background = locked ? 'var(--accent)' : '';
+    b.style.color = locked ? '#fff' : '';
+    if (!locked) return;
+    $('gpsBox').className = 'gps-box locked';
+    $('gpsStatus').textContent = '\u{1F512} LOCKED';
+    $('accBox').innerHTML = `<span class="acc-tag ${locked.acc <= 5 ? 'acc-good' : 'acc-med'}">Locked ±${locked.acc}m</span>` +
+      (liveGps ? ` <span style="font-size:.8rem;color:var(--muted)">live ±${liveGps.acc}m</span>` : '');
+    let note = 'Coordinates are frozen and will be used for photos until you unlock.';
+    if (liveGps) {
+      const d = Math.round(distM(locked.lat, locked.lon, liveGps.lat, liveGps.lon));
+      if (d > 20) note = `\u26A0 You are about ${d} m from the locked point. Unlock before tagging a new spot.`;
+    }
+    $('satNotes').textContent = note;
+  }
+  function lockNow(auto){
+    if (!bestGps || bestGps.source === 'Manual Entry') return;
+    locked = Object.assign({}, bestGps);
+    bestGps = locked;
+    updateCoordDisplay();
+    refreshLockUI();
+    if (staged) scheduleRender(50);
+    toast(`Coordinates locked at ±${locked.acc}m` + (auto ? ' (auto)' : locked.acc > 5 ? ' (worse than 5 m)' : ''));
+  }
+  function unlockNow(){
+    locked = null;
+    if (liveGps) bestGps = liveGps;
+    updateCoordDisplay();
+    refreshLockUI();
+    if (staged) scheduleRender(50);
+    toast('Coordinates unlocked, following live GPS');
+  }
+  $('btnLock').onclick = () => locked ? unlockNow() : lockNow(false);
+  $('autoLock').checked = autoLock;
+  $('autoLock').onchange = e => {
+    autoLock = e.target.checked;
+    store.set('geolog.autolock', autoLock ? '1' : '0');
+    if (autoLock && !locked && bestGps && bestGps.acc <= 5) lockNow(true);
+  };
+
   // ---------- 3. Manual coordinates ----------
   $('btnToggleManual').onclick = () => $('manualBox').classList.toggle('hide');
   $('btnApplyManual').onclick = () => {
@@ -361,12 +418,14 @@ dialog h3{margin:0 0 10px}
       return;
     }
     if (activeWatchId !== null) navigator.geolocation.clearWatch(activeWatchId);
+    locked = null;
     bestGps = { lat, lon, acc: 0, altitude: null, time: new Date(), source: 'Manual Entry' };
     $('gpsBox').className = 'gps-box locked';
     $('gpsStatus').textContent = 'Manual Coordinate Lock';
     updateCoordDisplay();
     $('accBox').innerHTML = '<span class="acc-tag acc-good">Exact (Manual)</span>';
     $('manualBox').classList.add('hide');
+    refreshLockUI();
     if (staged) { scheduleRender(50); lookupAddress(true); }
   };
 
@@ -697,7 +756,9 @@ dialog h3{margin:0 0 10px}
   function updateShareBtn(){
     $('btnShareSel').disabled = selected.size === 0;
     $('btnShareSel').textContent = selected.size ? `Share selected (${selected.size})` : 'Share selected';
-    $('btnSelAll').textContent = records.length && selected.size === records.length ? 'Clear' : 'Select all';
+    $('btnSelAll').textContent = records.length && selected.size === records.length ? 'Deselect' : 'Select all';
+    $('btnDelSel').disabled = selected.size === 0;
+    $('btnDelSel').textContent = selected.size ? `Delete selected (${selected.size})` : 'Delete selected';
   }
 
   $('recordsList').addEventListener('click', e => {
@@ -720,6 +781,23 @@ dialog h3{margin:0 0 10px}
     renderRecords();
   };
   $('btnShareSel').onclick = () => shareRecords(records.filter(r => selected.has(r.id)));
+
+  // ---------- Delete / clear log ----------
+  $('btnDelSel').onclick = () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} selected sample(s) and their photos from this phone? This cannot be undone.`)) return;
+    const tx = db.transaction('samples', 'readwrite');
+    ids.forEach(id => tx.objectStore('samples').delete(id));
+    tx.oncomplete = () => { selected.clear(); loadSavedRecords(); toast('Selected samples deleted'); };
+  };
+  $('btnClear').onclick = () => {
+    if (!records.length) { toast('Log is already empty'); return; }
+    if (!confirm(`Clear the whole log? All ${records.length} sample(s) and photos will be deleted from this phone. Download or share anything you still need first. This cannot be undone.`)) return;
+    const tx = db.transaction('samples', 'readwrite');
+    tx.objectStore('samples').clear();
+    tx.oncomplete = () => { selected.clear(); loadSavedRecords(); toast('Log cleared'); };
+  };
 
   // ---------- 8. Share ----------
   function recSummary(r){
