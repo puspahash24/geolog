@@ -113,11 +113,29 @@ dialog h3{margin:0 0 10px}
     <label for="description">Outcrop / Lithology Description</label>
     <textarea id="description" placeholder="Formation, lithology, strike/dip, structural notes, sample ID..."></textarea>
 
+    <div style="background:var(--card);border-radius:8px;padding:10px;margin:2px 0 12px">
+      <label>Saving photos</label>
+      <div class="seg" data-key="autosave">
+        <button type="button" data-val="manual">Manual</button>
+        <button type="button" data-val="auto">Auto-save</button>
+      </div>
+      <div class="row">
+        <div id="folderLabel" style="flex:1;font-size:.8rem;color:var(--muted)"></div>
+        <button type="button" class="btn btn-sm hide" id="btnFolder">Choose folder</button>
+      </div>
+    </div>
+
     <input type="file" id="camInput" accept="image/*" capture="environment" class="hide">
-    <button type="button" class="btn btn-primary" id="btnSnap">Capture / Select Photo</button>
+    <input type="file" id="galInput" accept="image/*" class="hide">
+    <div class="row">
+      <button type="button" class="btn btn-primary" id="btnSnap" style="flex:1">Take Photo</button>
+      <button type="button" class="btn btn-primary" id="btnGallery" style="flex:1;background:var(--card);border-color:var(--line)">From Gallery</button>
+    </div>
 
     <div id="editor" class="hide">
       <div class="preview-wrap"><img id="imgPreview" alt="Preview with geo-tag"></div>
+      <div id="photoNote" class="hint" style="margin:8px 0 6px"></div>
+      <button type="button" class="btn btn-sm hide" id="btnUseCurrent" style="margin-bottom:6px">Use current GPS instead</button>
 
       <div class="ed-grid">
         <label>Geo-tag position</label>
@@ -238,8 +256,10 @@ dialog h3{margin:0 0 10px}
   const selected = new Set();
   const settings = {
     coordMode: store.get('geolog.coordMode', 'latlon'),
-    edge: store.get('geolog.edge', 'bottom')
+    edge: store.get('geolog.edge', 'bottom'),
+    autosave: store.get('geolog.autosave', 'manual')
   };
+  let dirHandle = null;
 
   // ---------- Coordinates: lat/long + UTM (WGS 84, zone auto from longitude) ----------
   function toUTM(lat, lon){
@@ -269,6 +289,7 @@ dialog h3{margin:0 0 10px}
   }
   function accSuffix(m){
     if (m.source === 'Manual Entry') return ' [MANUAL]';
+    if (m.source === 'EXIF') return ' [FROM PHOTO EXIF]';
     return ` [±${m.acc}m${m.altitude ? ', Alt: ' + m.altitude + 'm' : ''}]`;
   }
   function coordLines(m, mode){
@@ -293,6 +314,10 @@ dialog h3{margin:0 0 10px}
       syncSeg();
       updateCoordDisplay();
       scheduleRender(50);
+      if (k === 'autosave') {
+        refreshSaveUI();
+        if (settings.autosave === 'auto' && window.showDirectoryPicker && !dirHandle) chooseFolder();
+      }
     };
   });
   syncSeg();
@@ -436,12 +461,13 @@ dialog h3{margin:0 0 10px}
     scheduleRender(50);
   }
   function maybeLookupAddress(){
-    if (staged && !staged.looked && bestGps) { staged.looked = true; lookupAddress(false); }
+    if (staged && !staged.looked && (staged.pos || bestGps)) { staged.looked = true; lookupAddress(false); }
   }
   async function lookupAddress(force){
     const s = staged;
-    if (!s || !bestGps) return;
-    const { lat, lon } = bestGps;
+    const p = s && (s.pos || bestGps);
+    if (!s || !p) return;
+    const { lat, lon } = p;
     const hint = $('addrHint');
     let cache = null;
     try { cache = JSON.parse(store.get('geolog.addr', 'null')); } catch(e){}
@@ -555,7 +581,7 @@ dialog h3{margin:0 0 10px}
     g.fillRect(0, 0, W, H);
     g.drawImage(src, px, py);
 
-    g.fillStyle = meta.lat != null && meta.acc <= 15 ? '#22c55e' : '#e65c00';
+    g.fillStyle = meta.lat != null && typeof meta.acc === 'number' && meta.acc <= 15 ? '#22c55e' : '#e65c00';
     g.fillRect(sx, sy, bar, sH);
 
     g.font = font;
@@ -570,13 +596,14 @@ dialog h3{margin:0 0 10px}
 
   function currentMeta(){
     const t = staged.time;
+    const p = staged.pos || bestGps;
     return {
       date: fmtDate(t), time: fmtTime(t),
-      lat: bestGps ? bestGps.lat : null,
-      lon: bestGps ? bestGps.lon : null,
-      acc: bestGps ? bestGps.acc : 'No Fix',
-      altitude: bestGps ? bestGps.altitude : null,
-      source: bestGps ? bestGps.source : null,
+      lat: p ? p.lat : null,
+      lon: p ? p.lon : null,
+      acc: p ? p.acc : 'No Fix',
+      altitude: p ? p.altitude : null,
+      source: p ? p.source : null,
       geologist: $('geologist').value.trim(),
       description: $('description').value.trim(),
       address: $('address').value.trim(),
@@ -612,29 +639,115 @@ dialog h3{margin:0 0 10px}
     if (staged && staged.url) URL.revokeObjectURL(staged.url);
     staged = null;
     $('camInput').value = '';
+    $('galInput').value = '';
     $('address').value = '';
     $('addrHint').textContent = '';
+    $('photoNote').textContent = '';
+    $('btnUseCurrent').classList.add('hide');
     $('editor').classList.add('hide');
   }
 
-  $('btnSnap').onclick = () => $('camInput').click();
-  $('camInput').onchange = e => {
-    const file = e.target.files[0];
+  // ---- minimal EXIF reader (GPS position + date taken) for gallery photos ----
+  function parseTiff(v, t){
+    const le = v.getUint16(t) === 0x4949;
+    const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+    const readIfd = o => {
+      const n = u16(o), out = {};
+      for (let i = 0; i < n; i++) { const e = o + 2 + i * 12; out[u16(e)] = { type: u16(e + 2), count: u32(e + 4), off: e + 8 }; }
+      return out;
+    };
+    const valOff = en => ({1:1,2:1,3:2,4:4,5:8}[en.type] || 1) * en.count > 4 ? t + u32(en.off) : en.off;
+    const str = en => { const o = valOff(en); let r = ''; for (let i = 0; i < en.count - 1; i++) r += String.fromCharCode(v.getUint8(o + i)); return r; };
+    const rats = en => { const o = valOff(en), r = []; for (let i = 0; i < en.count; i++) r.push(u32(o + i*8) / u32(o + i*8 + 4)); return r; };
+    const res = {};
+    const i0 = readIfd(t + u32(t + 4));
+    if (i0[0x8769]) {
+      const ex = readIfd(t + u32(i0[0x8769].off));
+      const dt = ex[0x9003] || ex[0x9004];
+      if (dt) res.dt = str(dt);
+    }
+    if (!res.dt && i0[0x132]) res.dt = str(i0[0x132]);
+    if (i0[0x8825]) {
+      const g = readIfd(t + u32(i0[0x8825].off));
+      if (g[1] && g[2] && g[3] && g[4]) {
+        const la = rats(g[2]), lo = rats(g[4]);
+        let lat = la[0] + la[1]/60 + la[2]/3600, lon = lo[0] + lo[1]/60 + lo[2]/3600;
+        if (str(g[1]) === 'S') lat = -lat;
+        if (str(g[3]) === 'W') lon = -lon;
+        if (isFinite(lat) && isFinite(lon) && (lat !== 0 || lon !== 0)) {
+          res.lat = lat; res.lon = lon;
+          if (g[6]) { const a = rats(g[6])[0]; if (isFinite(a)) res.alt = Math.round(a); }
+        }
+      }
+    }
+    return res;
+  }
+  async function readExif(file){
+    try {
+      const v = new DataView(await file.slice(0, 262144).arrayBuffer());
+      if (v.getUint16(0) !== 0xFFD8) return {};
+      let off = 2;
+      while (off < v.byteLength - 4) {
+        const marker = v.getUint16(off), len = v.getUint16(off + 2);
+        if (marker === 0xFFE1 && v.getUint32(off + 4) === 0x45786966) return parseTiff(v, off + 10);
+        if ((marker & 0xFF00) !== 0xFF00) break;
+        off += 2 + len;
+      }
+    } catch(e) {}
+    return {};
+  }
+  function parseExifDate(s){
+    const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(s || '');
+    if (!m) return null;
+    const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    return isNaN(d) ? null : d;
+  }
+
+  function updatePhotoNote(){
+    const n = $('photoNote'), b = $('btnUseCurrent');
+    b.classList.add('hide');
+    if (!staged || !staged.fromGallery) { n.textContent = ''; return; }
+    if (staged.pos) {
+      n.textContent = 'Gallery photo: location (and date/time if present) were read from the photo itself.';
+      b.classList.remove('hide');
+    } else {
+      n.textContent = 'Gallery photo with no location data (phones often strip it). The tag will use your current/locked GPS, which may not be where it was taken. Use Manual Override to enter the right coordinates. Time is the file date.';
+    }
+  }
+
+  async function stageFile(file, fromGallery){
     if (!file) return;
+    const ex = fromGallery ? await readExif(file) : {};
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       if (staged && staged.url) URL.revokeObjectURL(staged.url);
-      staged = { img, url, rot: 0, time: new Date(), addrEdited: false, looked: false };
+      const time = fromGallery ? (parseExifDate(ex.dt) || new Date(file.lastModified || Date.now())) : new Date();
+      const pos = fromGallery && ex.lat != null
+        ? { lat: ex.lat, lon: ex.lon, acc: null, altitude: ex.alt == null ? null : ex.alt, source: 'EXIF' } : null;
+      staged = { img, url, rot: 0, time, pos, fromGallery, addrEdited: false, looked: false };
       $('address').value = '';
       $('addrHint').textContent = '';
       $('editor').classList.remove('hide');
+      updatePhotoNote();
       doRender();
       maybeLookupAddress();
       $('editor').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     };
     img.onerror = () => { URL.revokeObjectURL(url); toast('Could not read that image.'); };
     img.src = url;
+  }
+  $('btnSnap').onclick = () => $('camInput').click();
+  $('btnGallery').onclick = () => $('galInput').click();
+  $('camInput').onchange = e => { const f = e.target.files[0]; e.target.value = ''; stageFile(f, false); };
+  $('galInput').onchange = e => { const f = e.target.files[0]; e.target.value = ''; stageFile(f, true); };
+  $('btnUseCurrent').onclick = () => {
+    if (!staged) return;
+    staged.pos = null;
+    staged.looked = false;
+    updatePhotoNote();
+    scheduleRender(0);
+    maybeLookupAddress();
   };
 
   $('geologist').addEventListener('input', () => scheduleRender());
@@ -654,9 +767,76 @@ dialog h3{margin:0 0 10px}
     req.onsuccess = e => { db = e.target.result; loadSavedRecords(); };
   }
 
+  // ---------- Auto-save location ----------
+  function kvOpen(){
+    return new Promise((res, rej) => {
+      const r = indexedDB.open('GeoLogSettings', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function kvGet(k){
+    try {
+      const d = await kvOpen();
+      return await new Promise(res => { const q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); });
+    } catch(e) { return null; }
+  }
+  async function kvSet(k, v){
+    try {
+      const d = await kvOpen();
+      await new Promise(res => { const tx = d.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = res; tx.onerror = res; });
+    } catch(e) {}
+  }
+  function refreshSaveUI(){
+    const sup = !!window.showDirectoryPicker;
+    $('btnFolder').classList.toggle('hide', !sup);
+    let t;
+    if (settings.autosave !== 'auto') t = 'Manual: photos stay in the log. Use Download or Share on each record.';
+    else if (sup) t = dirHandle ? `Auto-saving each photo to folder: ${dirHandle.name}` : 'Auto-save is on. Choose a folder (you will be asked on first save).';
+    else t = 'Auto-save is on. This browser cannot pick a folder, so each photo downloads to your Downloads folder (change it in Chrome > Settings > Downloads > Location).';
+    $('folderLabel').textContent = t;
+  }
+  async function chooseFolder(){
+    try {
+      const h = await window.showDirectoryPicker({ id: 'geolog', mode: 'readwrite' });
+      dirHandle = h;
+      await kvSet('dirHandle', h);
+      refreshSaveUI();
+      toast('Folder set: ' + h.name);
+      return true;
+    } catch(e) { return false; }
+  }
+  $('btnFolder').onclick = chooseFolder;
+  async function writeToFolder(blob, name){
+    let n = name, i = 1;
+    for (;;) {
+      try { await dirHandle.getFileHandle(n); i++; n = name.replace(/\.jpg$/, `_${i}.jpg`); }
+      catch(e) { break; }
+    }
+    const fh = await dirHandle.getFileHandle(n, { create: true });
+    const w = await fh.createWritable();
+    await w.write(blob);
+    await w.close();
+  }
+  function downloadBlob(blob, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  }
+
   $('btnSave').onclick = async () => {
     if (!staged) return;
     $('btnSave').disabled = true;
+    // Folder permission must be requested straight after the tap (needs a user gesture)
+    let folderOk = true;
+    if (settings.autosave === 'auto' && window.showDirectoryPicker) {
+      try {
+        folderOk = dirHandle ? (await dirHandle.requestPermission({ mode: 'readwrite' })) === 'granted' : await chooseFolder();
+      } catch(e) { folderOk = false; }
+    }
     try {
       clearTimeout(renderTimer);
       const ok = await doRender();
@@ -676,12 +856,20 @@ dialog h3{margin:0 0 10px}
       };
       const tx = db.transaction('samples', 'readwrite');
       tx.objectStore('samples').add(record);
-      tx.oncomplete = () => {
+      tx.oncomplete = async () => {
+        let msg = 'Saved to log';
+        if (settings.autosave === 'auto') {
+          try {
+            if (!window.showDirectoryPicker) { downloadBlob(record.photo, fileName(record)); msg += ' and downloaded'; }
+            else if (folderOk && dirHandle) { await writeToFolder(record.photo, fileName(record)); msg += ` and folder "${dirHandle.name}"`; }
+            else msg += ' (no folder access, so not auto-saved)';
+          } catch(e) { msg += ' (auto-save failed)'; }
+        }
         clearStaged();
         $('description').value = '';
         $('btnSave').disabled = false;
         loadSavedRecords();
-        toast('Saved to log');
+        toast(msg);
       };
       tx.onerror = () => { $('btnSave').disabled = false; toast('Could not save (storage error).'); };
     } catch(e) {
@@ -730,7 +918,7 @@ dialog h3{margin:0 0 10px}
       const url = URL.createObjectURL(r.photo);
       urlsToRevoke.push(url);
       const pos = r.lat == null ? 'No GPS' :
-        coordLines(m, m.coordMode).map(esc).join('<br>') + (r.source === 'Manual Entry' ? ' (manual)' : ` (±${esc(r.accuracy)}m)`);
+        coordLines(m, m.coordMode).map(esc).join('<br>') + (r.source === 'Manual Entry' ? ' (manual)' : r.source === 'EXIF' ? ' (from photo EXIF)' : ` (±${esc(r.accuracy)}m)`);
       const card = document.createElement('div');
       card.className = 'rec-card';
       card.innerHTML = `
@@ -890,6 +1078,8 @@ dialog h3{margin:0 0 10px}
   };
 
   // ---------- Start ----------
+  refreshSaveUI();
+  if (window.showDirectoryPicker) kvGet('dirHandle').then(h => { if (h) { dirHandle = h; refreshSaveUI(); } });
   initDB();
   startHardwareGps();
 })();
